@@ -30,6 +30,29 @@ The Speck-It MCP Server adapts GitHub's Spec Kit workflow into a Model Context P
    - Point the agent at the command above.
    - Supply `root` arguments or call `set_feature_root` if the agent executes outside the project tree.
 
+## Example MCP Client Configuration
+
+Below is a sample MCP configuration snippet that launches this server via `uv`:
+
+```json
+{
+  "mcpServers": {
+    "speck-it": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp[cli]",
+        "mcp",
+        "run",
+        "<path-to-repo>/main.py"
+      ],
+      "disabledTools": []
+    }
+  }
+}
+```
+
 ## Tooling Overview
 
 - **Workspace setup**: `set_constitution`, `get_constitution`, `list_features`.
