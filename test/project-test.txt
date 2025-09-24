@@ -1,0 +1,32 @@
+Load the MCP server through your agent.
+Configure principles via 
+set_constitution
+.
+Create a spec with 
+generate_spec(feature_name, description, ...)
+.
+Generate the implementation plan using 
+generate_plan(feature_id, tech_context=...)
+.
+Produce execution tasks with 
+generate_tasks(feature_id)
+.
+Retrieve high-level execution guidance via 
+implementation_playbook(feature_id)
+ or list all features with 
+list_features
+.
+
+Speck It Test:
+
+1. Can you set the constitution of my project for me? I want you to use Typescript, Shadcn UI, prefer effecient and reusable code, strong typing, and Zustand if state is needed. Set the constitution with the @mcp:speck-it "set_constitution" tool.
+
+2. Can you run the speck-it mcp register_feature_root to register this project as the operating directory?
+
+3. Can you now generate a spec using the "generate_spec" tool from speck-it. I want a Shadcn UI developer portfolio website where I can show potential employers my projects. It should be sleek and modern, have animations, and as many features as possible. I want it to have a saas landing page feel. I want it to have dark mode and light mode, with dark mode being the default theme. Use placeholder information and images. I will fill in all info.
+
+4. Can you now generate a plan using the speck-it mcp server?
+
+5. Can you now generate a task list using the speck-it mcp server?
+
+6. Implement everything now. Complete the tasks and implementing the spec. Make sure to update tasks as you work on them using speck-it mcp update_task & complete_task tool.
