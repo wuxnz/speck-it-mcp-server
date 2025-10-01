@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.resources import TextResource
 
 from lib import (
     FeatureAnalysis,
@@ -110,6 +111,13 @@ def _workspace(root: Optional[str], *, feature_id: Optional[str] = None) -> Spec
     return workspace
 
 
+def _workspace_optional(root: Optional[str], *, feature_id: Optional[str] = None) -> Optional[SpecKitWorkspace]:
+    try:
+        return _workspace(root, feature_id=feature_id)
+    except ValueError:
+        return None
+
+
 @mcp.tool()
 def set_constitution(content: str, mode: str = "replace", root: Optional[str] = None) -> Dict[str, str]:
     """Create or update the project constitution used for downstream planning."""
@@ -132,8 +140,41 @@ def get_constitution(root: Optional[str] = None) -> Dict[str, Optional[str]]:
 def list_features(root: Optional[str] = None) -> Dict[str, Any]:
     """Enumerate features that have been generated in the workspace."""
 
-    workspace = _workspace(root)
+    workspace = _workspace_optional(root)
+    if not workspace:
+        raise ValueError(
+            "Unable to determine project root. Provide the 'root' argument or set SPECKIT_PROJECT_ROOT."
+        )
+
     return {"features": workspace.list_features()}
+
+
+@mcp.resource("speck-it://features")
+def resource_features():
+    """Resource view exposing generated feature metadata for discovery."""
+
+    workspace = _workspace_optional(None)
+    if not workspace:
+        return TextResource(
+            "No project root detected. Launch tools with a 'root' argument or set SPECKIT_PROJECT_ROOT."
+        )
+
+    features = workspace.list_features()
+    if not features:
+        return TextResource("No features have been generated yet.")
+
+    lines = ["Speck-It Features"]
+    for feature in features:
+        lines.append("")
+        lines.append(f"- {feature['feature_id']}: {feature['feature_name']}")
+        if feature.get("spec_path"):
+            lines.append(f"  Spec: {feature['spec_path']}")
+        if feature.get("plan_path"):
+            lines.append(f"  Plan: {feature['plan_path']}")
+        if feature.get("tasks_path"):
+            lines.append(f"  Tasks: {feature['tasks_path']}")
+
+    return TextResource("\n".join(lines))
 
 
 @mcp.tool()
