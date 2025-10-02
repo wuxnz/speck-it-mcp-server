@@ -118,6 +118,117 @@ class TaskItem:
         }
 
 
+@dataclass(slots=True)
+class ProjectTask:
+    """Enhanced task representation for project-level task management."""
+
+    task_id: str
+    feature_id: str
+    description: str
+    task_type: str  # 'workflow', 'spec', 'plan', 'implementation', 'validation', 'custom'
+    priority: int = 5  # 1-10 scale, lower number = higher priority
+    status: str = 'pending'  # 'pending', 'in_progress', 'completed', 'blocked', 'cancelled'
+    dependencies: List[str] = field(default_factory=list)  # List of task_ids this depends on
+    prerequisites: List[str] = field(default_factory=list)  # List of prerequisite conditions
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+    assigned_to: Optional[str] = None  # Could be AI model name or user
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    completed_at: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+    blocked_by: List[str] = field(default_factory=list)  # Task IDs that block this one
+    blocks: List[str] = field(default_factory=list)  # Task IDs blocked by this one
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "feature_id": self.feature_id,
+            "description": self.description,
+            "task_type": self.task_type,
+            "priority": self.priority,
+            "status": self.status,
+            "dependencies": list(self.dependencies),
+            "prerequisites": list(self.prerequisites),
+            "estimated_hours": self.estimated_hours,
+            "actual_hours": self.actual_hours,
+            "assigned_to": self.assigned_to,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "completed_at": self.completed_at,
+            "notes": list(self.notes),
+            "tags": list(self.tags),
+            "blocked_by": list(self.blocked_by),
+            "blocks": list(self.blocks),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ProjectTask":
+        return cls(
+            task_id=data["task_id"],
+            feature_id=data["feature_id"],
+            description=data["description"],
+            task_type=data["task_type"],
+            priority=data.get("priority", 5),
+            status=data.get("status", "pending"),
+            dependencies=data.get("dependencies", []),
+            prerequisites=data.get("prerequisites", []),
+            estimated_hours=data.get("estimated_hours"),
+            actual_hours=data.get("actual_hours"),
+            assigned_to=data.get("assigned_to"),
+            created_at=data.get("created_at", datetime.utcnow().isoformat() + "Z"),
+            updated_at=data.get("updated_at", datetime.utcnow().isoformat() + "Z"),
+            completed_at=data.get("completed_at"),
+            notes=data.get("notes", []),
+            tags=data.get("tags", []),
+            blocked_by=data.get("blocked_by", []),
+            blocks=data.get("blocks", []),
+        )
+
+
+@dataclass(slots=True)
+class ProjectStatus:
+    """Project-level status tracking across all features."""
+
+    project_name: str
+    total_features: int = 0
+    completed_features: int = 0
+    in_progress_features: int = 0
+    blocked_features: int = 0
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    in_progress_tasks: int = 0
+    blocked_tasks: int = 0
+    high_priority_tasks: int = 0
+    overdue_tasks: int = 0
+    estimated_hours_remaining: float = 0.0
+    actual_hours_spent: float = 0.0
+    last_updated: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    blockers: List[str] = field(default_factory=list)
+    milestones: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "project_name": self.project_name,
+            "total_features": self.total_features,
+            "completed_features": self.completed_features,
+            "in_progress_features": self.in_progress_features,
+            "blocked_features": self.blocked_features,
+            "total_tasks": self.total_tasks,
+            "completed_tasks": self.completed_tasks,
+            "in_progress_tasks": self.in_progress_tasks,
+            "blocked_tasks": self.blocked_tasks,
+            "high_priority_tasks": self.high_priority_tasks,
+            "overdue_tasks": self.overdue_tasks,
+            "estimated_hours_remaining": self.estimated_hours_remaining,
+            "actual_hours_spent": self.actual_hours_spent,
+            "last_updated": self.last_updated,
+            "blockers": list(self.blockers),
+            "milestones": list(self.milestones),
+        }
+
+
 # ---------------------------------------------------------------------------
 # Helper utilities for lightweight NLP-style processing
 # ---------------------------------------------------------------------------
@@ -310,14 +421,26 @@ class SpecKitWorkspace:
         self.memory_dir = self.base_dir / "memory"
         self.specs_dir = self.base_dir / "specs"
         self.data_dir = self.base_dir / "state"
+        self.tasks_dir = self.base_dir / "project_tasks"
 
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self.specs_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
 
     def _remember_feature_root(self, feature_id: str) -> None:
         register_feature_root(feature_id, self.root)
+
+    def spec_exists(self, feature_id: str) -> bool:
+        """Check if a specification exists for the given feature."""
+        feature_dir = self._feature_dir(feature_id)
+        return (feature_dir / "spec.md").exists()
+
+    def plan_exists(self, feature_id: str) -> bool:
+        """Check if an implementation plan exists for the given feature."""
+        feature_dir = self._feature_dir(feature_id)
+        return (feature_dir / "plan.md").exists()
 
     # ------------------------------------------------------------------
     # Constitution management
@@ -783,6 +906,362 @@ class SpecKitWorkspace:
         return tasks
 
     # ------------------------------------------------------------------
+    # Project-level task management
+    # ------------------------------------------------------------------
+
+    def _project_tasks_path(self) -> Path:
+        """Get the path to the project tasks storage file."""
+        return self.tasks_dir / "project_tasks.json"
+
+    def _load_project_tasks(self) -> Dict[str, ProjectTask]:
+        """Load all project tasks from storage."""
+        path = self._project_tasks_path()
+        if not path.exists():
+            return {}
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            tasks = {}
+            for task_id, task_data in data.items():
+                tasks[task_id] = ProjectTask.from_dict(task_data)
+            return tasks
+        except (json.JSONDecodeError, KeyError):
+            return {}
+
+    def _save_project_tasks(self, tasks: Dict[str, ProjectTask]) -> None:
+        """Save all project tasks to storage."""
+        path = self._project_tasks_path()
+        data = {task_id: task.to_dict() for task_id, task in tasks.items()}
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def create_project_task(
+        self,
+        feature_id: str,
+        description: str,
+        task_type: str = "custom",
+        priority: int = 5,
+        dependencies: Optional[List[str]] = None,
+        prerequisites: Optional[List[str]] = None,
+        estimated_hours: Optional[float] = None,
+        tags: Optional[List[str]] = None,
+    ) -> ProjectTask:
+        """Create a new project-level task."""
+        tasks = self._load_project_tasks()
+
+        # Generate unique task ID
+        task_counter = 1
+        while True:
+            task_id = f"PROJ-{task_counter:03d}"
+            if task_id not in tasks:
+                break
+            task_counter += 1
+
+        task = ProjectTask(
+            task_id=task_id,
+            feature_id=feature_id,
+            description=description,
+            task_type=task_type,
+            priority=priority,
+            dependencies=dependencies or [],
+            prerequisites=prerequisites or [],
+            estimated_hours=estimated_hours,
+            tags=tags or [],
+        )
+
+        tasks[task_id] = task
+        self._save_project_tasks(tasks)
+        return task
+
+    def get_project_tasks(
+        self,
+        feature_id: Optional[str] = None,
+        status: Optional[str] = None,
+        task_type: Optional[str] = None,
+        priority_range: Optional[tuple[int, int]] = None,
+    ) -> List[ProjectTask]:
+        """Get project tasks with optional filtering."""
+        tasks = self._load_project_tasks()
+
+        filtered_tasks = []
+        for task in tasks.values():
+            if feature_id and task.feature_id != feature_id:
+                continue
+            if status and task.status != status:
+                continue
+            if task_type and task.task_type != task_type:
+                continue
+            if priority_range and not (priority_range[0] <= task.priority <= priority_range[1]):
+                continue
+            filtered_tasks.append(task)
+
+        # Sort by priority (lower number = higher priority), then by creation date
+        filtered_tasks.sort(key=lambda t: (t.priority, t.created_at))
+        return filtered_tasks
+
+    def update_project_task(
+        self,
+        task_id: str,
+        status: Optional[str] = None,
+        priority: Optional[int] = None,
+        actual_hours: Optional[float] = None,
+        add_note: Optional[str] = None,
+        add_tag: Optional[str] = None,
+        remove_tag: Optional[str] = None,
+    ) -> Optional[ProjectTask]:
+        """Update an existing project task."""
+        tasks = self._load_project_tasks()
+        task = tasks.get(task_id)
+
+        if not task:
+            return None
+
+        if status:
+            task.status = status
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+            if status == "completed" and not task.completed_at:
+                task.completed_at = datetime.utcnow().isoformat() + "Z"
+
+        if priority is not None:
+            task.priority = priority
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+
+        if actual_hours is not None:
+            task.actual_hours = actual_hours
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+
+        if add_note:
+            task.notes.append(add_note)
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+
+        if add_tag and add_tag not in task.tags:
+            task.tags.append(add_tag)
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+
+        if remove_tag and remove_tag in task.tags:
+            task.tags.remove(remove_tag)
+            task.updated_at = datetime.utcnow().isoformat() + "Z"
+
+        self._save_project_tasks(tasks)
+        return task
+
+    def validate_task_prerequisites(self, task_id: str) -> Dict[str, Any]:
+        """Validate that all prerequisites for a task are met."""
+        tasks = self._load_project_tasks()
+        task = tasks.get(task_id)
+
+        if not task:
+            return {"valid": False, "error": f"Task '{task_id}' not found"}
+
+        issues = []
+
+        # Check feature root registration
+        if "feature_root_registered" in task.prerequisites:
+            if not lookup_feature_root(task.feature_id):
+                issues.append(f"Feature root not registered for feature '{task.feature_id}'")
+
+        # Check if constitution exists
+        if "constitution_exists" in task.prerequisites:
+            if not self.constitution_path.exists():
+                issues.append("Project constitution not set")
+
+        # Check if spec exists
+        if "spec_exists" in task.prerequisites:
+            if not self.spec_exists(task.feature_id):
+                issues.append(f"Specification not found for feature '{task.feature_id}'")
+
+        # Check if plan exists
+        if "plan_exists" in task.prerequisites:
+            if not self.plan_exists(task.feature_id):
+                issues.append(f"Implementation plan not found for feature '{task.feature_id}'")
+
+        # Check if tasks exist
+        if "tasks_exist" in task.prerequisites:
+            try:
+                existing_tasks = self.list_tasks(task.feature_id)
+                if not existing_tasks:
+                    issues.append(f"No task list found for feature '{task.feature_id}'")
+            except FileNotFoundError:
+                issues.append(f"Task list not generated for feature '{task.feature_id}'")
+
+        # Check dependency tasks
+        for dep_id in task.dependencies:
+            dep_task = tasks.get(dep_id)
+            if not dep_task:
+                issues.append(f"Dependency task '{dep_id}' not found")
+            elif dep_task.status != "completed":
+                issues.append(f"Dependency task '{dep_id}' is not completed (status: {dep_task.status})")
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "can_proceed": len(issues) == 0
+        }
+
+    def get_next_executable_tasks(self) -> List[ProjectTask]:
+        """Get tasks that are ready to be executed (prerequisites met, no blocking dependencies)."""
+        tasks = self._load_project_tasks()
+        executable = []
+
+        for task in tasks.values():
+            if task.status in ["completed", "cancelled"]:
+                continue
+
+            # Check if all dependencies are completed
+            deps_met = True
+            for dep_id in task.dependencies:
+                dep_task = tasks.get(dep_id)
+                if not dep_task or dep_task.status != "completed":
+                    deps_met = False
+                    break
+
+            if not deps_met:
+                continue
+
+            # Validate prerequisites
+            validation = self.validate_task_prerequisites(task.task_id)
+            if validation["can_proceed"]:
+                executable.append(task)
+
+        # Sort by priority and creation date
+        executable.sort(key=lambda t: (t.priority, t.created_at))
+        return executable
+
+    def get_project_status(self) -> ProjectStatus:
+        """Get comprehensive project status across all features."""
+        tasks = self._load_project_tasks()
+        features = self.list_features()
+
+        # Calculate feature statistics
+        total_features = len(features)
+        completed_features = sum(1 for f in features if self._is_feature_completed(f["feature_id"]))
+        in_progress_features = sum(1 for f in features if self._is_feature_in_progress(f["feature_id"]))
+        blocked_features = sum(1 for f in features if self._is_feature_blocked(f["feature_id"]))
+
+        # Calculate task statistics
+        total_tasks = len(tasks)
+        completed_tasks = sum(1 for t in tasks.values() if t.status == "completed")
+        in_progress_tasks = sum(1 for t in tasks.values() if t.status == "in_progress")
+        blocked_tasks = sum(1 for t in tasks.values() if t.status == "blocked")
+        high_priority_tasks = sum(1 for t in tasks.values() if t.priority <= 3)
+
+        # Calculate time estimates
+        estimated_hours_remaining = sum(
+            t.estimated_hours or 0 for t in tasks.values()
+            if t.status not in ["completed", "cancelled"]
+        )
+        actual_hours_spent = sum(
+            t.actual_hours or 0 for t in tasks.values()
+            if t.status == "completed"
+        )
+
+        # Find blockers
+        blockers = []
+        for task in tasks.values():
+            if task.status == "blocked":
+                blockers.extend(task.blocked_by)
+
+        # Get milestones (completed high-priority tasks)
+        milestones = [
+            t.description for t in tasks.values()
+            if t.status == "completed" and t.priority <= 2
+        ]
+
+        return ProjectStatus(
+            project_name=self.root.name,
+            total_features=total_features,
+            completed_features=completed_features,
+            in_progress_features=in_progress_features,
+            blocked_features=blocked_features,
+            total_tasks=total_tasks,
+            completed_tasks=completed_tasks,
+            in_progress_tasks=in_progress_tasks,
+            blocked_tasks=blocked_tasks,
+            high_priority_tasks=high_priority_tasks,
+            estimated_hours_remaining=estimated_hours_remaining,
+            actual_hours_spent=actual_hours_spent,
+            blockers=list(set(blockers)),
+            milestones=milestones[:10],  # Limit to 10 most recent
+        )
+
+    def _is_feature_completed(self, feature_id: str) -> bool:
+        """Check if a feature is completed."""
+        try:
+            status = self.feature_status(feature_id)
+            return status["tasks"]["all_completed"]
+        except:
+            return False
+
+    def _is_feature_in_progress(self, feature_id: str) -> bool:
+        """Check if a feature is in progress."""
+        try:
+            status = self.feature_status(feature_id)
+            total = status["tasks"]["total"]
+            completed = status["tasks"]["completed"]
+            return total > 0 and completed < total
+        except:
+            return False
+
+    def _is_feature_blocked(self, feature_id: str) -> bool:
+        """Check if a feature is blocked."""
+        tasks = self.get_project_tasks(feature_id=feature_id)
+        return any(t.status == "blocked" for t in tasks)
+
+    def auto_update_task_status(self, feature_id: str, action: str) -> List[str]:
+        """Automatically update task statuses based on tool executions."""
+        updated_tasks = []
+        tasks = self._load_project_tasks()
+
+        for task in tasks.values():
+            if task.feature_id != feature_id:
+                continue
+
+            # Update workflow tasks based on actions
+            if action == "constitution_set" and "constitution_exists" in task.prerequisites:
+                if task.status == "pending":
+                    task.status = "completed"
+                    task.updated_at = datetime.utcnow().isoformat() + "Z"
+                    task.completed_at = datetime.utcnow().isoformat() + "Z"
+                    task.notes.append("Automatically completed: constitution was set")
+                    updated_tasks.append(task.task_id)
+
+            elif action == "feature_root_set" and "feature_root_registered" in task.prerequisites:
+                if task.status == "pending":
+                    task.status = "completed"
+                    task.updated_at = datetime.utcnow().isoformat() + "Z"
+                    task.completed_at = datetime.utcnow().isoformat() + "Z"
+                    task.notes.append("Automatically completed: feature root was registered")
+                    updated_tasks.append(task.task_id)
+
+            elif action == "spec_generated" and "spec_exists" in task.prerequisites:
+                if task.status == "pending":
+                    task.status = "completed"
+                    task.updated_at = datetime.utcnow().isoformat() + "Z"
+                    task.completed_at = datetime.utcnow().isoformat() + "Z"
+                    task.notes.append("Automatically completed: specification was generated")
+                    updated_tasks.append(task.task_id)
+
+            elif action == "plan_generated" and "plan_exists" in task.prerequisites:
+                if task.status == "pending":
+                    task.status = "completed"
+                    task.updated_at = datetime.utcnow().isoformat() + "Z"
+                    task.completed_at = datetime.utcnow().isoformat() + "Z"
+                    task.notes.append("Automatically completed: implementation plan was generated")
+                    updated_tasks.append(task.task_id)
+
+            elif action == "tasks_generated" and "tasks_exist" in task.prerequisites:
+                if task.status == "pending":
+                    task.status = "completed"
+                    task.updated_at = datetime.utcnow().isoformat() + "Z"
+                    task.completed_at = datetime.utcnow().isoformat() + "Z"
+                    task.notes.append("Automatically completed: task list was generated")
+                    updated_tasks.append(task.task_id)
+
+        if updated_tasks:
+            self._save_project_tasks(tasks)
+
+        return updated_tasks
+
+    # ------------------------------------------------------------------
     # Rendering helpers
     # ------------------------------------------------------------------
 
@@ -1104,4 +1583,4 @@ Deliverables:
         return context
 
 
-__all__ = ["SpecKitWorkspace", "FeatureArtifacts", "FeatureAnalysis"]
+__all__ = ["SpecKitWorkspace", "FeatureArtifacts", "FeatureAnalysis", "ProjectTask", "ProjectStatus"]

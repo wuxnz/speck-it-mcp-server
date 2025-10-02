@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.resources import TextResource
@@ -13,6 +13,8 @@ from lib import (
     FeatureAnalysis,
     FeatureArtifacts,
     SpecKitWorkspace,
+    ProjectTask,
+    ProjectStatus,
     register_feature_root as _register_feature_root,
     lookup_feature_root as _lookup_feature_root,
 )
@@ -120,11 +122,28 @@ def _workspace_optional(root: Optional[str], *, feature_id: Optional[str] = None
 
 @mcp.tool()
 def set_constitution(content: str, mode: str = "replace", root: Optional[str] = None) -> Dict[str, str]:
-    """Create or update the project constitution used for downstream planning."""
+    """STEP 1: Create or update the project constitution used for downstream planning.
+    This establishes the foundational principles and guidelines for the entire project.
+    Should be called first before any feature development."""
 
     workspace = _workspace(root)
     path = workspace.save_constitution(content, mode=mode)
-    return {"constitution_path": str(path)}
+
+    # Auto-update project tasks using manage_project_tasks function
+    task_update_result = manage_project_tasks(
+        action="auto_update",
+        feature_id="global",
+        root=root
+    )
+    updated_tasks = task_update_result.get("updated_tasks", [])
+
+    return {
+        "constitution_path": str(path),
+        "next_suggested_step": "set_feature_root",
+        "workflow_tip": "Next: Register your project root with set_feature_root to establish the workspace",
+        "auto_updated_tasks": updated_tasks,
+        "message": f"Constitution saved. Auto-updated {len(updated_tasks)} project tasks."
+    }
 
 
 @mcp.tool()
@@ -179,7 +198,9 @@ def resource_features():
 
 @mcp.tool()
 def set_feature_root(feature_id: str, root: str) -> Dict[str, str]:
-    """Explicitly register the project root that owns the feature's `.speck-it/` artifacts."""
+    """STEP 2: Register the project root that owns the feature's `.speck-it/` artifacts.
+    This establishes where feature specifications and artifacts will be stored.
+    Prerequisites: Project should have a constitution set via set_constitution."""
 
     resolved = Path(root).expanduser().resolve()
     if not resolved.exists():
@@ -189,10 +210,24 @@ def set_feature_root(feature_id: str, root: str) -> Dict[str, str]:
         specs_dir = resolved / marker / "specs"
         if specs_dir.exists():
             _register_feature_root(feature_id, resolved)
+
+            # Auto-update project tasks using manage_project_tasks function
+            workspace = _workspace(str(resolved), feature_id=feature_id)
+            task_update_result = manage_project_tasks(
+                action="auto_update",
+                feature_id=feature_id,
+                root=str(resolved)
+            )
+            updated_tasks = task_update_result.get("updated_tasks", [])
+
             return {
                 "feature_id": feature_id,
                 "root": str(resolved),
                 "marker": marker,
+                "next_suggested_step": "generate_spec",
+                "workflow_tip": f"Next: Create a specification for feature '{feature_id}' using generate_spec",
+                "auto_updated_tasks": updated_tasks,
+                "message": f"Feature root registered. Auto-updated {len(updated_tasks)} project tasks."
             }
 
     raise ValueError(
@@ -208,7 +243,9 @@ def generate_spec(
     root: Optional[str] = None,
     save: bool = True,
 ) -> Dict[str, Any]:
-    """Create a specification artifact for the provided feature description."""
+    """STEP 3: Create a specification artifact for the provided feature description.
+    This generates detailed requirements and analysis for the feature.
+    Prerequisites: Project root should be registered via set_feature_root."""
 
     workspace = _workspace(root, feature_id=feature_id)
     artifacts, analysis, content = workspace.generate_spec(
@@ -217,10 +254,22 @@ def generate_spec(
         feature_id=feature_id,
         save=save,
     )
+    # Auto-update project tasks using manage_project_tasks function
+    task_update_result = manage_project_tasks(
+        action="auto_update",
+        feature_id=feature_id,
+        root=root
+    )
+    updated_tasks = task_update_result.get("updated_tasks", [])
+
     return {
         "artifacts": _serialize_artifacts(artifacts),
         "analysis": _serialize_analysis(analysis),
         "content": content,
+        "next_suggested_step": "generate_plan",
+        "workflow_tip": "Next: Generate an implementation plan using generate_plan with the feature_id",
+        "auto_updated_tasks": updated_tasks,
+        "message": f"Specification generated. Auto-updated {len(updated_tasks)} project tasks."
     }
 
 
@@ -231,18 +280,41 @@ def generate_plan(
     root: Optional[str] = None,
     save: bool = True,
 ) -> Dict[str, Any]:
-    """Render an implementation plan using the previously generated spec."""
+    """STEP 4: Render an implementation plan using the previously generated spec.
+    This creates a detailed technical plan based on the feature specification.
+    Prerequisites: Feature spec must exist (created via generate_spec)."""
 
     workspace = _workspace(root, feature_id=feature_id)
+
+    # Check if spec exists
+    if not workspace.spec_exists(feature_id):
+        return {
+            "error": "No specification found",
+            "suggestion": f"Call generate_spec first to create a specification for feature '{feature_id}'",
+            "next_suggested_step": "generate_spec"
+        }
+
     artifacts, analysis, content = workspace.generate_plan(
         feature_id,
         tech_context=tech_context,
         save=save,
     )
+    # Auto-update project tasks using manage_project_tasks function
+    task_update_result = manage_project_tasks(
+        action="auto_update",
+        feature_id=feature_id,
+        root=root
+    )
+    updated_tasks = task_update_result.get("updated_tasks", [])
+
     return {
         "artifacts": _serialize_artifacts(artifacts),
         "analysis": _serialize_analysis(analysis),
         "content": content,
+        "next_suggested_step": "generate_tasks",
+        "workflow_tip": "Next: Generate task list using generate_tasks to break down the plan",
+        "auto_updated_tasks": updated_tasks,
+        "message": f"Implementation plan generated. Auto-updated {len(updated_tasks)} project tasks."
     }
 
 
@@ -252,17 +324,316 @@ def generate_tasks(
     root: Optional[str] = None,
     save: bool = True,
 ) -> Dict[str, Any]:
-    """Create a TDD-oriented task list from the existing plan."""
+    """STEP 5: Create a TDD-oriented task list from the existing plan.
+    This breaks down the implementation plan into actionable tasks.
+    Prerequisites: Implementation plan must exist (created via generate_plan)."""
 
     workspace = _workspace(root, feature_id=feature_id)
+
+    # Check if plan exists
+    if not workspace.plan_exists(feature_id):
+        return {
+            "error": "No implementation plan found",
+            "suggestion": f"Call generate_plan first to create an implementation plan for feature '{feature_id}'",
+            "next_suggested_step": "generate_plan"
+        }
+
     artifacts, analysis, content = workspace.generate_tasks(
         feature_id,
         save=save,
     )
+    # Auto-update project tasks using manage_project_tasks function
+    task_update_result = manage_project_tasks(
+        action="auto_update",
+        feature_id=feature_id,
+        root=root
+    )
+    updated_tasks = task_update_result.get("updated_tasks", [])
+
     return {
         "artifacts": _serialize_artifacts(artifacts),
         "analysis": _serialize_analysis(analysis),
         "content": content,
+        "next_suggested_step": "list_tasks",
+        "workflow_tip": "Next: Use list_tasks to see the generated tasks, then use next_task to start execution",
+        "auto_updated_tasks": updated_tasks,
+        "message": f"Task list generated. Auto-updated {len(updated_tasks)} project tasks."
+    }
+
+
+@mcp.tool()
+def manage_project_tasks(
+    action: str,
+    feature_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    description: Optional[str] = None,
+    task_type: str = "custom",
+    priority: int = 5,
+    dependencies: Optional[List[str]] = None,
+    prerequisites: Optional[List[str]] = None,
+    estimated_hours: Optional[float] = None,
+    status: Optional[str] = None,
+    actual_hours: Optional[float] = None,
+    add_note: Optional[str] = None,
+    add_tag: Optional[str] = None,
+    remove_tag: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    filter_feature_id: Optional[str] = None,
+    filter_status: Optional[str] = None,
+    filter_task_type: Optional[str] = None,
+    priority_range: Optional[List[int]] = None,
+    root: Optional[str] = None,
+) -> Dict[str, Any]:
+    """COMPREHENSIVE TASK MANAGEMENT: Advanced project task management with dependencies, prerequisites, and progress tracking.
+
+    Actions:
+    - 'create': Create a new project task
+    - 'list': List tasks with optional filtering
+    - 'update': Update an existing task
+    - 'validate': Validate task prerequisites
+    - 'get_next': Get next executable tasks
+    - 'get_status': Get comprehensive project status
+    - 'auto_update': Automatically update task statuses based on workflow actions
+
+    Prerequisites are validated conditions like:
+    - 'constitution_exists': Project constitution is set
+    - 'feature_root_registered': Feature root is registered
+    - 'spec_exists': Feature specification exists
+    - 'plan_exists': Implementation plan exists
+    - 'tasks_exist': Task list is generated
+
+    Task Types:
+    - 'workflow': Constitution, feature root, spec, plan, tasks generation
+    - 'spec': Specification-related tasks
+    - 'plan': Planning and design tasks
+    - 'implementation': Development and coding tasks
+    - 'validation': Testing and quality assurance tasks
+    - 'custom': User-defined tasks
+
+    Examples:
+    - Create workflow task: action='create', feature_id='feat-001', description='Set project constitution', task_type='workflow', prerequisites=['constitution_exists']
+    - List high priority tasks: action='list', priority_range=[1,3]
+    - Update task status: action='update', task_id='PROJ-001', status='in_progress'
+    - Validate prerequisites: action='validate', task_id='PROJ-001'
+    - Get next tasks: action='get_next'
+    - Get project status: action='get_status'
+    """
+
+    workspace = _workspace(root)
+
+    if action == "create":
+        if not feature_id or not description:
+            return {"error": "feature_id and description are required for task creation"}
+
+        task = workspace.create_project_task(
+            feature_id=feature_id,
+            description=description,
+            task_type=task_type,
+            priority=priority,
+            dependencies=dependencies,
+            prerequisites=prerequisites,
+            estimated_hours=estimated_hours,
+            tags=tags,
+        )
+
+        return {
+            "success": True,
+            "task": task.to_dict(),
+            "message": f"Created project task {task.task_id}",
+            "next_suggested_action": "validate",
+            "workflow_tip": f"Validate prerequisites for task {task.task_id} before starting"
+        }
+
+    elif action == "list":
+        if priority_range and len(priority_range) == 2:
+            priority_range_tuple = (priority_range[0], priority_range[1])
+        else:
+            priority_range_tuple = None
+
+        tasks = workspace.get_project_tasks(
+            feature_id=filter_feature_id,
+            status=filter_status,
+            task_type=filter_task_type,
+            priority_range=priority_range_tuple,
+        )
+
+        return {
+            "tasks": [task.to_dict() for task in tasks],
+            "total_count": len(tasks),
+            "filters_applied": {
+                "feature_id": filter_feature_id,
+                "status": filter_status,
+                "task_type": filter_task_type,
+                "priority_range": priority_range,
+            }
+        }
+
+    elif action == "update":
+        if not task_id:
+            return {"error": "task_id is required for task updates"}
+
+        updated_task = workspace.update_project_task(
+            task_id=task_id,
+            status=status,
+            priority=priority,
+            actual_hours=actual_hours,
+            add_note=add_note,
+            add_tag=add_tag,
+            remove_tag=remove_tag,
+        )
+
+        if not updated_task:
+            return {"error": f"Task '{task_id}' not found"}
+
+        return {
+            "success": True,
+            "task": updated_task.to_dict(),
+            "message": f"Updated task {task_id}",
+            "next_suggested_action": "get_next" if status == "completed" else "validate",
+            "workflow_tip": "Check for newly available tasks" if status == "completed" else f"Validate prerequisites for task {task_id}"
+        }
+
+    elif action == "validate":
+        if not task_id:
+            return {"error": "task_id is required for validation"}
+
+        validation = workspace.validate_task_prerequisites(task_id)
+
+        return {
+            "task_id": task_id,
+            "validation": validation,
+            "can_proceed": validation["can_proceed"],
+            "next_suggested_action": "update" if validation["can_proceed"] else "list",
+            "workflow_tip": f"Task {task_id} is ready to start" if validation["can_proceed"] else "Resolve validation issues before proceeding"
+        }
+
+    elif action == "get_next":
+        next_tasks = workspace.get_next_executable_tasks()
+
+        return {
+            "executable_tasks": [task.to_dict() for task in next_tasks],
+            "count": len(next_tasks),
+            "next_suggested_action": "update" if next_tasks else "create",
+            "workflow_tip": f"{len(next_tasks)} tasks ready for execution" if next_tasks else "No tasks ready - create new tasks or resolve blockers"
+        }
+
+    elif action == "get_status":
+        project_status = workspace.get_project_status()
+
+        # Get detailed feature breakdown
+        features = workspace.list_features()
+        feature_details = []
+
+        for feature in features:
+            feature_tasks = workspace.get_project_tasks(feature_id=feature["feature_id"])
+            feature_status = workspace.feature_status(feature["feature_id"])
+
+            feature_details.append({
+                "feature_id": feature["feature_id"],
+                "feature_name": feature.get("feature_name", feature["feature_id"]),
+                "project_tasks_count": len(feature_tasks),
+                "completed_project_tasks": sum(1 for t in feature_tasks if t.status == "completed"),
+                "traditional_tasks": feature_status["tasks"],
+            })
+
+        return {
+            "project_status": project_status.to_dict(),
+            "feature_breakdown": feature_details,
+            "next_suggested_action": "get_next",
+            "workflow_tip": "Use 'get_next' to find tasks ready for execution"
+        }
+
+    elif action == "auto_update":
+        if not feature_id:
+            return {"error": "feature_id is required for auto-update"}
+
+        # Map common actions to auto-update triggers
+        action_map = {
+            "set_constitution": "constitution_set",
+            "set_feature_root": "feature_root_set",
+            "generate_spec": "spec_generated",
+            "generate_plan": "plan_generated",
+            "generate_tasks": "tasks_generated",
+        }
+
+        trigger_action = action_map.get(action, action)
+        # Use workspace method directly to avoid circular dependency
+        updated_task_ids = workspace.auto_update_task_status(feature_id, trigger_action)
+
+        return {
+            "success": True,
+            "updated_tasks": updated_task_ids,
+            "count": len(updated_task_ids),
+            "message": f"Auto-updated {len(updated_task_ids)} tasks based on {action}",
+            "next_suggested_action": "get_next",
+            "workflow_tip": "Check for newly unlocked tasks"
+        }
+
+    else:
+        return {
+            "error": f"Unknown action '{action}'",
+            "available_actions": ["create", "list", "update", "validate", "get_next", "get_status", "auto_update"],
+            "next_suggested_action": "get_status",
+            "workflow_tip": "Use 'get_status' to understand current project state"
+        }
+
+
+@mcp.tool()
+def get_workflow_guide() -> Dict[str, Any]:
+    """Get comprehensive guidance on the recommended Speck-It feature development workflow."""
+    return {
+        "workflow_overview": "Complete feature development workflow in recommended order",
+        "steps": [
+            {
+                "step": 1,
+                "tool": "set_constitution",
+                "description": "Establish project constitution and foundational principles",
+                "purpose": "Define project guidelines and standards for all development"
+            },
+            {
+                "step": 2,
+                "tool": "set_feature_root",
+                "description": "Register the project root directory for feature artifacts",
+                "purpose": "Establish where specifications and plans will be stored"
+            },
+            {
+                "step": 3,
+                "tool": "generate_spec",
+                "description": "Create detailed feature specification from description",
+                "purpose": "Generate comprehensive requirements and analysis"
+            },
+            {
+                "step": 4,
+                "tool": "generate_plan",
+                "description": "Create implementation plan from specification",
+                "purpose": "Develop technical approach and architecture"
+            },
+            {
+                "step": 5,
+                "tool": "generate_tasks",
+                "description": "Break down plan into actionable TDD-oriented tasks",
+                "purpose": "Create executable checklist for implementation"
+            },
+            {
+                "step": 6,
+                "tools": ["list_tasks", "next_task", "update_task", "complete_task"],
+                "description": "Execute tasks sequentially with progress tracking",
+                "purpose": "Implement feature following TDD methodology"
+            },
+            {
+                "step": 7,
+                "tool": "finalize_feature",
+                "description": "Mark feature complete after all tasks are done",
+                "purpose": "Validate completion and archive feature artifacts"
+            }
+        ],
+        "tips": [
+            "Always follow steps in order - each step depends on the previous",
+            "Use next_task to get guidance on what to work on next",
+            "Update tasks with notes as you implement for traceability",
+            "Complete tasks as you finish them to track progress",
+            "Only finalize when ALL tasks are complete"
+        ]
     }
 
 
@@ -276,9 +647,24 @@ def feature_status(feature_id: str, root: Optional[str] = None) -> Dict[str, Any
 
 @mcp.tool()
 def finalize_feature(feature_id: str, root: Optional[str] = None) -> Dict[str, Any]:
-    """Validate all artifacts and mark the feature complete only when every task is done."""
+    """STEP 7 (FINAL): Validate all artifacts and mark the feature complete only when every task is done.
+    This is the final step - only call after ALL tasks are completed.
+    Prerequisites: All feature tasks must be completed via complete_task."""
 
     workspace = _workspace(root, feature_id=feature_id)
+
+    # Check if all tasks are complete
+    status = workspace.feature_status(feature_id)
+    if not status["tasks"]["all_completed"]:
+        incomplete_count = len(status["tasks"]["incomplete"])
+        return {
+            "error": "Cannot finalize - tasks still incomplete",
+            "incomplete_tasks": incomplete_count,
+            "suggestion": f"Complete all {incomplete_count} remaining tasks before finalizing",
+            "next_suggested_step": "next_task",
+            "workflow_tip": "Use next_task to continue working through remaining tasks"
+        }
+
     return workspace.finalize_feature(feature_id)
 
 
