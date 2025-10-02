@@ -6,9 +6,12 @@ The Speck-It MCP Server adapts GitHub's Spec Kit workflow into a Model Context P
 
 - **Spec generation** via `generate_spec` with constitution-aware summaries and clarifications.
 - **Implementation planning** through `generate_plan`, producing phase-oriented guidance.
+- **Enhanced task management** with `manage_project_tasks` supporting create, list, update, validate, get_next, get_status, and auto_update actions.
 - **Execution tasks** with `generate_tasks`, `list_tasks`, `update_task`, `next_task`, and `complete_task` to track progress.
+- **Advanced task tracking** using `ProjectTask` and `ProjectStatus` classes for comprehensive project oversight.
 - **Governance hooks** including `set_constitution`, `get_constitution`, `feature_status`, and `finalize_feature`.
 - **Root registration** utilities (`set_feature_root`) to ensure artifacts resolve to the correct project.
+- **Centralized auto-updates** that automatically update task statuses across all workflow stages (constitution setting, feature root registration, spec generation, plan creation, and task generation).
 
 ## Quick Start
 
@@ -57,8 +60,10 @@ Below is a sample MCP configuration snippet that launches this server via `uv`:
 
 - **Workspace setup**: `set_constitution`, `get_constitution`, `list_features`.
 - **Specification pipeline**: `generate_spec`, `generate_plan`, `generate_tasks`.
+- **Enhanced project management**: `manage_project_tasks` with comprehensive task operations (create, list, update, validate, get_next, get_status, auto_update).
 - **Task execution**: `list_tasks`, `update_task`, `next_task`, `complete_task`, `feature_status`, `finalize_feature`.
 - **Project binding**: `set_feature_root` to register the correct artifact root when auto-detection is insufficient.
+- **Advanced tracking**: `ProjectTask` and `ProjectStatus` classes for detailed project oversight and milestone tracking.
 
 ## Storage Layout
 
@@ -80,6 +85,39 @@ Artifacts are written under `.speck-it/` by default:
 
 Set the `SPECKIT_STORAGE_DIR` environment variable to switch to an alternate directory name (e.g., `.spec-kit`).
 
+## Enhanced Project Management
+
+The Speck-It MCP Server now includes advanced project management capabilities that provide comprehensive task tracking and workflow automation:
+
+### Centralized Task Management
+
+The `manage_project_tasks` function provides a unified interface for all task operations:
+
+- **Task Creation**: Create tasks with priorities, dependencies, prerequisites, and time estimates
+- **Task Listing**: Filter and sort tasks by status, feature, type, or priority range
+- **Task Updates**: Modify task status, add notes, update priorities, and track actual hours
+- **Prerequisite Validation**: Ensure tasks meet all requirements before execution
+- **Next Task Discovery**: Automatically identify ready-to-execute tasks across all features
+- **Project Status Overview**: Comprehensive status reporting with feature breakdowns
+- **Auto-Updates**: Automatically update task statuses based on workflow milestones
+
+### Enhanced Task Classes
+
+- **`ProjectTask`**: Advanced task representation with metadata, dependencies, and progress tracking
+- **`ProjectStatus`**: Project-level status aggregation across all features and milestones
+
+### Workflow Integration
+
+All workflow stages now automatically update project tasks:
+
+- Setting constitution → Marks global workflow tasks complete
+- Registering feature root → Unlocks specification generation tasks
+- Generating specifications → Transitions to planning phase
+- Creating implementation plans → Unlocks development tasks
+- Generating task lists → Enables execution phase
+
+This ensures complete traceability and automatic workflow progression throughout the development lifecycle.
+
 ## Development
 
 - Create a virtual environment or rely on `uv`'s managed environment (`uv venv`).
@@ -95,12 +133,12 @@ This repository includes a fully generated developer portfolio that showcases ho
 
 ### Workflow Steps
 
-- **Step 1 — Constitution**: `set_constitution` was used to enforce TypeScript, shadcn/ui, reusable patterns, strong typing, and Zustand for state needs.
-- **Step 2 — Root Registration**: `set_feature_root` recorded the project directory so all artifacts write to the correct `.speck-it/` tree.
-- **Step 3 — Specification**: `generate_spec` captured the high-level goals for a SaaS-inspired portfolio with dark mode, animations, and rich sections filled with placeholders.
-- **Step 4 — Planning**: `generate_plan` produced a detailed implementation roadmap aligning engineering tasks with the constitution.
-- **Step 5 — Task Authoring**: `generate_tasks` converted the plan into a TDD-friendly checklist stored in `tasks.md`.
-- **Step 6 — Execution**: Each checklist item was implemented and closed via `update_task`, producing the full Next.js + TypeScript + shadcn/ui experience.
+- **Step 1 — Constitution**: `set_constitution` was used to enforce TypeScript, shadcn/ui, reusable patterns, strong typing, and Zustand for state needs. The system automatically updates project tasks to reflect this milestone.
+- **Step 2 — Root Registration**: `set_feature_root` recorded the project directory so all artifacts write to the correct `.speck-it/` tree. Task statuses are automatically updated to unlock the next workflow stage.
+- **Step 3 — Specification**: `generate_spec` captured the high-level goals for a SaaS-inspired portfolio with dark mode, animations, and rich sections filled with placeholders. The enhanced task management system automatically marks specification tasks as complete.
+- **Step 4 — Planning**: `generate_plan` produced a detailed implementation roadmap aligning engineering tasks with the constitution. Project tasks are auto-updated to reflect planning completion and unlock implementation tasks.
+- **Step 5 — Task Authoring**: `generate_tasks` converted the plan into a TDD-friendly checklist stored in `tasks.md`. The system uses `manage_project_tasks` to automatically transition from planning to execution phase.
+- **Step 6 — Execution**: Each checklist item was implemented and closed via `update_task` and `complete_task`, with full traceability through the enhanced `ProjectTask` and `ProjectStatus` classes, producing the full Next.js + TypeScript + shadcn/ui experience.
 
 ### Screenshots
 
