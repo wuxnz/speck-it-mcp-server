@@ -127,6 +127,8 @@ This ensures complete traceability and automatic workflow progression throughout
   ```
 - Regenerate specs or plans when changing NLP heuristics in `lib/speckit.py` to keep templates up to date.
 
+---
+
 ### Workflow Steps
 
 - **Step 1 — Constitution**: `set_constitution` was used to enforce TypeScript, shadcn/ui, reusable patterns, strong typing, and Zustand for state needs. The system automatically updates project tasks to reflect this milestone.
