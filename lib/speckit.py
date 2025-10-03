@@ -397,7 +397,7 @@ class SpecKitWorkspace:
     """Manage Spec Kit-inspired artifacts within a repository."""
 
     STORAGE_DIR_ENV = "SPECKIT_STORAGE_DIR"
-    STORAGE_DIR_CANDIDATES = (".spec-kit", ".speck-it")
+    STORAGE_DIR_CANDIDATES = (".speck-it")
 
     def __init__(self, root: Path | str):
         self.root = Path(root).resolve()

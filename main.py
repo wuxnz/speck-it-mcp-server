@@ -22,7 +22,7 @@ from lib import (
 mcp = FastMCP("speck-it")
 
 
-PROJECT_MARKER_DIRECTORIES = (".speck-it", ".spec-kit")
+PROJECT_MARKER_DIRECTORIES = (".speck-it")
 SERVER_ROOT = Path(__file__).resolve().parent
 
 
