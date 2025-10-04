@@ -407,15 +407,7 @@ class SpecKitWorkspace:
             candidates.append(preferred_name)
         candidates.extend(self.STORAGE_DIR_CANDIDATES)
 
-        base_dir = None
-        for name in candidates:
-            candidate = self.root / name
-            if candidate.exists():
-                base_dir = candidate
-                break
-
-        if base_dir is None:
-            base_dir = self.root / (preferred_name or self.STORAGE_DIR_CANDIDATES[0])
+        base_dir = self.root / ".speck-it"
 
         self.base_dir = base_dir
         self.memory_dir = self.base_dir / "memory"

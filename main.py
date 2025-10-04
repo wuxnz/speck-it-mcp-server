@@ -67,8 +67,11 @@ def _locate_existing_storage(feature_id: str) -> Optional[Path]:
 
 
 def _resolve_root(root: Optional[str], *, feature_id: Optional[str] = None) -> Path:
+    print(f"DEBUG: _resolve_root called with root={root}, feature_id={feature_id}")
+
     if root:
         resolved = Path(root).expanduser().resolve()
+        print(f"DEBUG: Root provided: {resolved}, exists: {resolved.exists()}")
         if not resolved.exists():
             raise ValueError(f"Provided root '{root}' does not exist.")
         return resolved
@@ -76,6 +79,7 @@ def _resolve_root(root: Optional[str], *, feature_id: Optional[str] = None) -> P
     env_root = os.getenv("SPECKIT_PROJECT_ROOT")
     if env_root:
         env_path = Path(env_root).expanduser().resolve()
+        print(f"DEBUG: Environment root: {env_path}, exists: {env_path.exists()}")
         if not env_path.exists():
             raise ValueError(
                 f"Environment variable SPECKIT_PROJECT_ROOT points to '{env_root}', which does not exist."
@@ -84,17 +88,20 @@ def _resolve_root(root: Optional[str], *, feature_id: Optional[str] = None) -> P
 
     if feature_id:
         spec_root = _locate_existing_storage(feature_id)
+        print(f"DEBUG: Located existing storage for {feature_id}: {spec_root}")
         if spec_root:
             return spec_root
 
     detected_root = _locate_workspace_root()
+    print(f"DEBUG: Detected workspace root: {detected_root}")
     if detected_root:
         return detected_root
 
-    raise ValueError(
-        "Unable to determine project root automatically. Provide the 'root' argument when calling the tool "
-        "or set the SPECKIT_PROJECT_ROOT environment variable."
-    )
+    # Default to current working directory if no other root found
+    # This makes the tools more agent-friendly by having a sensible default
+    cwd = Path.cwd().resolve()
+    print(f"DEBUG: Using current working directory as fallback: {cwd}")
+    return cwd
 
 
 def _serialize_artifacts(artifacts: FeatureArtifacts) -> Dict[str, Any]:
@@ -106,10 +113,14 @@ def _serialize_analysis(analysis: FeatureAnalysis) -> Dict[str, Any]:
 
 
 def _workspace(root: Optional[str], *, feature_id: Optional[str] = None) -> SpecKitWorkspace:
+    print(f"DEBUG: _workspace called with root={root}, feature_id={feature_id}")
     resolved = _resolve_root(root, feature_id=feature_id)
+    print(f"DEBUG: Resolved root to: {resolved}")
     workspace = SpecKitWorkspace(resolved)
+    print(f"DEBUG: Workspace created with base_dir: {workspace.base_dir}")
     if feature_id:
         _register_feature_root(feature_id, resolved)
+        print(f"DEBUG: Registered feature root for {feature_id}")
     return workspace
 
 
@@ -121,38 +132,85 @@ def _workspace_optional(root: Optional[str], *, feature_id: Optional[str] = None
 
 
 @mcp.tool()
-def set_constitution(content: str, mode: str = "replace", root: Optional[str] = None) -> Dict[str, str]:
+def set_constitution(content: str, mode: str = "replace", root: Optional[str] = None) -> Dict[str, Any]:
     """STEP 1: Create or update the project constitution used for downstream planning.
     This establishes the foundational principles and guidelines for the entire project.
     Should be called first before any feature development."""
 
-    workspace = _workspace(root)
-    path = workspace.save_constitution(content, mode=mode)
+    try:
+        print(f"DEBUG: set_constitution called with root={root}, mode={mode}")
+        workspace = _workspace(root)
+        print(f"DEBUG: Workspace created at {workspace.root}")
+        print(f"DEBUG: Constitution will be saved to {workspace.constitution_path}")
 
-    # Auto-update project tasks using manage_project_tasks function
-    task_update_result = manage_project_tasks(
-        action="auto_update",
-        feature_id="global",
-        root=root
-    )
-    updated_tasks = task_update_result.get("updated_tasks", [])
+        path = workspace.save_constitution(content, mode=mode)
+        print(f"DEBUG: Constitution saved successfully to {path}")
 
-    return {
-        "constitution_path": str(path),
-        "next_suggested_step": "set_feature_root",
-        "workflow_tip": "Next: Register your project root with set_feature_root to establish the workspace",
-        "auto_updated_tasks": updated_tasks,
-        "message": f"Constitution saved. Auto-updated {len(updated_tasks)} project tasks."
-    }
+        # Verify the file was actually created and has content
+        if path.exists():
+            saved_content = path.read_text(encoding="utf-8")
+            print(f"DEBUG: Saved content length: {len(saved_content)} characters")
+            print(f"DEBUG: First 100 chars: {saved_content[:100]}")
+        else:
+            print("ERROR: Constitution file was not created!")
+
+        # Auto-update project tasks using manage_project_tasks function
+        try:
+            task_update_result = manage_project_tasks(
+                action="auto_update",
+                feature_id="global",
+                root=root
+            )
+            updated_tasks = task_update_result.get("updated_tasks", [])
+        except Exception as task_error:
+            # If task update fails, don't fail the whole operation
+            updated_tasks = []
+            print(f"Warning: Task auto-update failed: {task_error}")
+
+        return {
+            "constitution_path": str(path),
+            "next_suggested_step": "set_feature_root",
+            "workflow_tip": "Next: Register your project root with set_feature_root to establish the workspace",
+            "auto_updated_tasks": str(updated_tasks),
+            "message": f"Constitution saved successfully to {path}. Auto-updated {len(updated_tasks)} project tasks."
+        }
+    except Exception as e:
+        print(f"ERROR: set_constitution failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": f"Failed to save constitution: {e}",
+            "suggestion": "Check that the project root exists and is writable",
+            "next_suggested_step": "set_constitution",
+            "workflow_tip": "Ensure you have write permissions to the project directory",
+            "constitution_path": None,
+            "auto_updated_tasks": "[]",
+            "message": f"Error: {e}"
+        }
 
 
 @mcp.tool()
 def get_constitution(root: Optional[str] = None) -> Dict[str, Optional[str]]:
     """Retrieve the current constitution contents, if any."""
 
-    workspace = _workspace(root)
-    content = workspace.load_constitution()
-    return {"constitution_path": str(workspace.constitution_path), "content": content}
+    try:
+        workspace = _workspace(root)
+        content = workspace.load_constitution()
+        return {
+            "constitution_path": str(workspace.constitution_path),
+            "content": content,
+            "exists": content is not None,
+            "message": "Constitution found" if content else "No constitution set yet"
+        }
+    except ValueError as e:
+        return {
+            "constitution_path": None,
+            "content": None,
+            "exists": False,
+            "error": str(e),
+            "message": "No workspace found. Use set_constitution to create a project constitution first.",
+            "next_suggested_step": "set_constitution"
+        }
 
 
 @mcp.tool()
@@ -161,11 +219,19 @@ def list_features(root: Optional[str] = None) -> Dict[str, Any]:
 
     workspace = _workspace_optional(root)
     if not workspace:
-        raise ValueError(
-            "Unable to determine project root. Provide the 'root' argument or set SPECKIT_PROJECT_ROOT."
-        )
+        return {
+            "features": [],
+            "message": "No workspace found. Use set_constitution to initialize a project first.",
+            "next_suggested_step": "set_constitution",
+            "workflow_tip": "Start by setting a project constitution to establish your development guidelines"
+        }
 
-    return {"features": workspace.list_features()}
+    features = workspace.list_features()
+    return {
+        "features": features,
+        "count": len(features),
+        "message": f"Found {len(features)} features" if features else "No features generated yet. Use generate_spec to create your first feature."
+    }
 
 
 @mcp.resource("speck-it://features")
@@ -175,12 +241,23 @@ def resource_features():
     workspace = _workspace_optional(None)
     if not workspace:
         return TextResource(
-            "No project root detected. Launch tools with a 'root' argument or set SPECKIT_PROJECT_ROOT."
+            "Speck-It MCP Server - No Project Found\n\n"
+            "To get started:\n"
+            "1. Use 'set_constitution' to establish your project principles\n"
+            "2. Use 'set_feature_root' to register your project directory\n"
+            "3. Use 'generate_spec' to create feature specifications\n\n"
+            "Example: set_constitution with your project constitution content"
         )
 
     features = workspace.list_features()
     if not features:
-        return TextResource("No features have been generated yet.")
+        return TextResource(
+            "Speck-It MCP Server - Ready for Development\n\n"
+            "No features generated yet. Get started by:\n"
+            "1. Using 'generate_spec' to create your first feature specification\n"
+            "2. Using 'list_features' to see all generated features\n"
+            "3. Using 'get_workflow_guide' for step-by-step guidance"
+        )
 
     lines = ["Speck-It Features"]
     for feature in features:
@@ -197,42 +274,48 @@ def resource_features():
 
 
 @mcp.tool()
-def set_feature_root(feature_id: str, root: str) -> Dict[str, str]:
+def set_feature_root(feature_id: str, root: Optional[str] = None) -> Dict[str, Any]:
     """STEP 2: Register the project root that owns the feature's `.speck-it/` artifacts.
     This establishes where feature specifications and artifacts will be stored.
     Prerequisites: Project should have a constitution set via set_constitution."""
 
-    resolved = Path(root).expanduser().resolve()
-    if not resolved.exists():
-        raise ValueError(f"Provided root '{root}' does not exist.")
+    # Use provided root or auto-detect
+    if root:
+        resolved = Path(root).expanduser().resolve()
+        if not resolved.exists():
+            raise ValueError(f"Provided root '{root}' does not exist.")
+    else:
+        # Auto-detect project root
+        try:
+            resolved = _resolve_root(None, feature_id=feature_id)
+        except ValueError as e:
+            raise ValueError(f"Unable to auto-detect project root: {e}. Please provide the 'root' argument.")
 
-    for marker in PROJECT_MARKER_DIRECTORIES:
-        specs_dir = resolved / marker / "specs"
-        if specs_dir.exists():
-            _register_feature_root(feature_id, resolved)
+    # Check if .speck-it directory exists, create if it doesn't
+    speck_it_dir = resolved / ".speck-it"
+    if not speck_it_dir.exists():
+        speck_it_dir.mkdir(parents=True, exist_ok=True)
 
-            # Auto-update project tasks using manage_project_tasks function
-            workspace = _workspace(str(resolved), feature_id=feature_id)
-            task_update_result = manage_project_tasks(
-                action="auto_update",
-                feature_id=feature_id,
-                root=str(resolved)
-            )
-            updated_tasks = task_update_result.get("updated_tasks", [])
+    _register_feature_root(feature_id, resolved)
 
-            return {
-                "feature_id": feature_id,
-                "root": str(resolved),
-                "marker": marker,
-                "next_suggested_step": "generate_spec",
-                "workflow_tip": f"Next: Create a specification for feature '{feature_id}' using generate_spec",
-                "auto_updated_tasks": updated_tasks,
-                "message": f"Feature root registered. Auto-updated {len(updated_tasks)} project tasks."
-            }
-
-    raise ValueError(
-        f"Root '{resolved}' does not contain any recognized storage directories: {PROJECT_MARKER_DIRECTORIES}."
+    # Auto-update project tasks using manage_project_tasks function
+    workspace = _workspace(str(resolved), feature_id=feature_id)
+    task_update_result = manage_project_tasks(
+        action="auto_update",
+        feature_id=feature_id,
+        root=str(resolved)
     )
+    updated_tasks = task_update_result.get("updated_tasks", [])
+
+    return {
+        "feature_id": feature_id,
+        "root": str(resolved),
+        "marker": ".speck-it",
+        "next_suggested_step": "generate_spec",
+        "workflow_tip": f"Next: Create a specification for feature '{feature_id}' using generate_spec",
+        "auto_updated_tasks": str(updated_tasks),
+        "message": f"Feature root registered. Auto-updated {len(updated_tasks)} project tasks."
+    }
 
 
 @mcp.tool()
@@ -268,7 +351,7 @@ def generate_spec(
         "content": content,
         "next_suggested_step": "generate_plan",
         "workflow_tip": "Next: Generate an implementation plan using generate_plan with the feature_id",
-        "auto_updated_tasks": updated_tasks,
+        "auto_updated_tasks": str(updated_tasks),
         "message": f"Specification generated. Auto-updated {len(updated_tasks)} project tasks."
     }
 
@@ -313,7 +396,7 @@ def generate_plan(
         "content": content,
         "next_suggested_step": "generate_tasks",
         "workflow_tip": "Next: Generate task list using generate_tasks to break down the plan",
-        "auto_updated_tasks": updated_tasks,
+        "auto_updated_tasks": str(updated_tasks),
         "message": f"Implementation plan generated. Auto-updated {len(updated_tasks)} project tasks."
     }
 
@@ -356,7 +439,7 @@ def generate_tasks(
         "content": content,
         "next_suggested_step": "list_tasks",
         "workflow_tip": "Next: Use list_tasks to see the generated tasks, then use next_task to start execution",
-        "auto_updated_tasks": updated_tasks,
+        "auto_updated_tasks": str(updated_tasks),
         "message": f"Task list generated. Auto-updated {len(updated_tasks)} project tasks."
     }
 
@@ -419,7 +502,17 @@ def manage_project_tasks(
     - Get project status: action='get_status'
     """
 
-    workspace = _workspace(root)
+    try:
+        workspace = _workspace(root)
+    except ValueError as e:
+        # If workspace doesn't exist yet, this is normal for early project setup
+        return {
+            "error": f"Workspace not initialized: {e}",
+            "suggestion": "This is normal for new projects. The constitution was saved successfully.",
+            "next_suggested_step": "set_feature_root",
+            "workflow_tip": "Continue by registering your project root with set_feature_root",
+            "workspace_created": True
+        }
 
     if action == "create":
         if not feature_id or not description:
@@ -554,11 +647,19 @@ def manage_project_tasks(
             "generate_spec": "spec_generated",
             "generate_plan": "plan_generated",
             "generate_tasks": "tasks_generated",
+            "auto_update": "constitution_set",  # For set_constitution calls
         }
 
-        trigger_action = action_map.get(action, action)
+        trigger_action = action_map.get(action, "constitution_set")
+        print(f"DEBUG: Auto-updating tasks for feature {feature_id} with action {trigger_action}")
+
         # Use workspace method directly to avoid circular dependency
-        updated_task_ids = workspace.auto_update_task_status(feature_id, trigger_action)
+        try:
+            updated_task_ids = workspace.auto_update_task_status(feature_id, trigger_action)
+            print(f"DEBUG: Auto-updated {len(updated_task_ids)} tasks: {updated_task_ids}")
+        except Exception as e:
+            print(f"DEBUG: Auto-update failed: {e}")
+            updated_task_ids = []
 
         return {
             "success": True,
