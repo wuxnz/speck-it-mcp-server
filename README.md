@@ -1,5 +1,9 @@
 # Speck-It MCP Server
 
+## Website [Speck-It MCP Server Website](https://speck-it.dev)
+
+---
+
 The Speck-It MCP Server adapts GitHub's Spec Kit workflow into a Model Context Protocol (MCP) service. It enables coding agents to generate specifications, implementation plans, task checklists, and execution playbooks directly within a project workspace. All generated artifacts are stored beneath the project's `.speck-it/` directory.
 
 ## Features
