@@ -9,14 +9,18 @@ from typing import Any, Dict, Optional, List
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.resources import TextResource
 
-from lib import (
+from src.models import (
     FeatureAnalysis,
     FeatureArtifacts,
-    SpecKitWorkspace,
-    ProjectTask,
-    ProjectStatus,
+)
+from src.workspace import Workspace
+from src.workflow import (
     register_feature_root as _register_feature_root,
     lookup_feature_root as _lookup_feature_root,
+)
+from src.models import (
+    ProjectTask,
+    ProjectStatus,
 )
 
 mcp = FastMCP("speck-it")
@@ -112,11 +116,11 @@ def _serialize_analysis(analysis: FeatureAnalysis) -> Dict[str, Any]:
     return analysis.to_dict()
 
 
-def _workspace(root: Optional[str], *, feature_id: Optional[str] = None) -> SpecKitWorkspace:
+def _workspace(root: Optional[str], *, feature_id: Optional[str] = None) -> Workspace:
     print(f"DEBUG: _workspace called with root={root}, feature_id={feature_id}")
     resolved = _resolve_root(root, feature_id=feature_id)
     print(f"DEBUG: Resolved root to: {resolved}")
-    workspace = SpecKitWorkspace(resolved)
+    workspace = Workspace(resolved)
     print(f"DEBUG: Workspace created with base_dir: {workspace.base_dir}")
     if feature_id:
         _register_feature_root(feature_id, resolved)
@@ -124,7 +128,7 @@ def _workspace(root: Optional[str], *, feature_id: Optional[str] = None) -> Spec
     return workspace
 
 
-def _workspace_optional(root: Optional[str], *, feature_id: Optional[str] = None) -> Optional[SpecKitWorkspace]:
+def _workspace_optional(root: Optional[str], *, feature_id: Optional[str] = None) -> Optional[Workspace]:
     try:
         return _workspace(root, feature_id=feature_id)
     except ValueError:

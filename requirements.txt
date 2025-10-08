@@ -1,1 +1,2 @@
-mcp[cli]
+# Core runtime dependencies
+mcp[cli]>=1.14.1

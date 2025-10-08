@@ -1,0 +1,36 @@
+# Development dependencies
+-r requirements.txt
+
+# Code formatting and linting
+black>=24.0.0
+ruff>=0.1.0
+isort>=5.13.0
+
+# Type checking
+mypy>=1.0.0
+types-all>=1.0.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.10.0
+
+# Pre-commit hooks
+pre-commit>=3.0.0
+
+# Security scanning
+safety>=2.0.0
+bandit>=1.7.0
+
+# Documentation
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Build tools
+build>=0.10.0
+twine>=4.0.0
+
+# Development utilities
+ipython>=8.0.0
+jupyter>=1.0.0
